@@ -12,14 +12,15 @@ void femu_init_mem_backend(struct femu_mbe *mbe, int64_t nbytes)
     assert(!mbe->mem_backend);
 
     mbe->size = nbytes;
-    mbe->mem_backend = g_malloc0(nbytes);
+	int64_t fake_bytes = 1024;
+    mbe->mem_backend = g_malloc0(fake_bytes);
     if (mbe->mem_backend == NULL) {
         error_report("FEMU: cannot allocate %" PRId64 " bytes for emulating SSD,"
                 "make sure you have enough free DRAM in your host\n", nbytes);
         abort();
     }
 
-    if (mlock(mbe->mem_backend, nbytes) == -1) {
+    if (mlock(mbe->mem_backend, fake_bytes) == -1) {
         error_report("FEMU: failed to pin %" PRId64 " bytes ...\n", nbytes);
         g_free(mbe->mem_backend);
         abort();
@@ -53,9 +54,12 @@ int femu_rw_mem_backend_bb(struct femu_mbe *mbe, QEMUSGList *qsg,
     while (sg_cur_index < qsg->nsg) {
         cur_addr = qsg->sg[sg_cur_index].base + sg_cur_byte;
         cur_len = qsg->sg[sg_cur_index].len - sg_cur_byte;
+
+		/*
         if (dma_memory_rw(qsg->as, cur_addr, mb + mb_oft, cur_len, dir)) {
             error_report("FEMU: dma_memory_rw error");
         }
+		*/
 
         mb_oft += cur_len;
 

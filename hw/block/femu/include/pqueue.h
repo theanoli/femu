@@ -161,5 +161,11 @@ void pqueue_dump(pqueue_t *q, FILE *out, pqueue_print_entry_f print);
  */
 int pqueue_is_valid(pqueue_t *q);
 
+/**
+ * THEANO PUT THIS HERE
+ * Allow for bubbling up as priorities change. 
+ */
+void pqueue_bubble_up(pqueue_t *q, size_t i);
+
 #endif /* PQUEUE_H */
 /** @} */

@@ -88,6 +88,25 @@ static void bubble_up(pqueue_t *q, size_t i)
     q->setpos(moving_node, i);
 }
 
+// THEANO PUT THIS HERE
+void pqueue_bubble_up(pqueue_t *q, size_t i)
+{
+	bubble_up(q, i);
+}
+
+// AND THIS
+void pqueue_swap(pqueue_t *q, size_t i, size_t j)
+{
+	void *node_i = q->d[i];
+	void *node_j = q->d[j];
+
+	q->d[i] = node_j; 
+	q->setpos(node_j, i);
+	q->d[j] = node_i; 
+	q->setpos(node_i, j);
+}
+
+
 static size_t maxchild(pqueue_t *q, size_t i)
 {
     size_t child_node = left(i);
@@ -166,6 +185,8 @@ int pqueue_remove(pqueue_t *q, void *d)
     else
         percolate_down(q, posn);
 
+	q->setpos(d, 0);
+
     return 0;
 }
 
@@ -179,6 +200,8 @@ void *pqueue_pop(pqueue_t *q)
     head = q->d[1];
     q->d[1] = q->d[--q->size];
     percolate_down(q, 1);
+
+	q->setpos(head, 0);
 
     return head;
 }

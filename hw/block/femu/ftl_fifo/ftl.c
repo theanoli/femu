@@ -1,3 +1,4 @@
+// FTL_FIFO
 #include "qemu/osdep.h"
 #include "hw/block/block.h"
 #include "hw/pci/msix.h"
@@ -243,8 +244,8 @@ static void ssd_init_params(struct ssdparams *spp)
 	// 32 GiB
     spp->secsz = 512;
     spp->secs_per_pg = 8;
-    spp->pgs_per_blk = 4 * 64;	// 16 * 64
-    spp->blks_per_pl = 166;  	// 16 * 166;
+    spp->pgs_per_blk = 4 * 64;
+    spp->blks_per_pl = 166;
     spp->pls_per_lun = 1;
     spp->luns_per_ch = 8;
     spp->nchs = 8;
@@ -281,7 +282,7 @@ static void ssd_init_params(struct ssdparams *spp)
     spp->secs_per_line = spp->pgs_per_line * spp->secs_per_pg;
     spp->tt_lines = spp->blks_per_lun; /* TODO: to fix under multiplanes */
 
-    spp->gc_thres_pcent = 0.90;
+    spp->gc_thres_pcent = 0.95;
     spp->gc_thres_lines = (int)((1 - spp->gc_thres_pcent) * spp->tt_lines);
     spp->gc_thres_pcent_high = 0.95;
     spp->gc_thres_lines_high = (int)((1 - spp->gc_thres_pcent_high) * spp->tt_lines);

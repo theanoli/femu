@@ -1,3 +1,4 @@
+// FTL_SMARTERFIFO
 #include "qemu/osdep.h"
 #include "hw/block/block.h"
 #include "hw/pci/msix.h"
@@ -187,7 +188,13 @@ static void ssd_advance_write_pointer(struct ssd *ssd)
                     //printf("Coperd,curline,vpc:%d,ipc:%d\n", wpp->curline->vpc, wpp->curline->ipc);
                     assert(wpp->curline->ipc > 0);
                     // pqueue_insert_fifo(lm->victim_line_pq, wpp->curline);
-					QTAILQ_INSERT_TAIL(&lm->victim_line_list, wpp->curline, entry);
+					if (!QTAILQ_EMPTY(&lm->victim_line_list) && 
+							wpp->curline->vpc <= QTAILQ_FIRST(&lm->victim_line_list)->vpc) {
+						QTAILQ_INSERT_HEAD(&lm->victim_line_list, wpp->curline, entry);
+					} else {
+						// Either empty or this shouldn't be GCed before the head
+						QTAILQ_INSERT_TAIL(&lm->victim_line_list, wpp->curline, entry);
+					}
                     lm->victim_line_cnt++;
                 }
                 /* current line is used up, pick another empty line */
@@ -243,8 +250,8 @@ static void ssd_init_params(struct ssdparams *spp)
 	// 32 GiB
     spp->secsz = 512;
     spp->secs_per_pg = 8;
-    spp->pgs_per_blk = 4 * 64;	// 16 * 64
-    spp->blks_per_pl = 166;  	// 16 * 166;
+    spp->pgs_per_blk = 4 * 64;
+    spp->blks_per_pl = 166;
     spp->pls_per_lun = 1;
     spp->luns_per_ch = 8;
     spp->nchs = 8;
@@ -281,7 +288,7 @@ static void ssd_init_params(struct ssdparams *spp)
     spp->secs_per_line = spp->pgs_per_line * spp->secs_per_pg;
     spp->tt_lines = spp->blks_per_lun; /* TODO: to fix under multiplanes */
 
-    spp->gc_thres_pcent = 0.90;
+    spp->gc_thres_pcent = 0.95;
     spp->gc_thres_lines = (int)((1 - spp->gc_thres_pcent) * spp->tt_lines);
     spp->gc_thres_pcent_high = 0.95;
     spp->gc_thres_lines_high = (int)((1 - spp->gc_thres_pcent_high) * spp->tt_lines);
@@ -597,7 +604,16 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
         lm->full_line_cnt--;
         // pqueue_insert_fifo(lm->victim_line_pq, line);
         QTAILQ_INSERT_TAIL(&lm->victim_line_list, line, entry);
+		line->pos = 1;
         lm->victim_line_cnt++;
+    } else if (line->pos) {
+		// There is at least one element, this one, in the list
+		// If the line's valid page count is less than the head, move it to the
+		// head s.t. it will get removed before the current head.
+		if (line->vpc <= QTAILQ_FIRST(&lm->victim_line_list)->vpc) {
+			QTAILQ_REMOVE(&lm->victim_line_list, line, entry);
+			QTAILQ_INSERT_HEAD(&lm->victim_line_list, line, entry);
+		}
 	}
 }
 
@@ -739,6 +755,7 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
 	
 	victim_line = QTAILQ_FIRST(&lm->victim_line_list);
     QTAILQ_REMOVE(&lm->victim_line_list, victim_line, entry);
+	victim_line->pos = 0;
     lm->victim_line_cnt--;
     //printf("Coperd,%s,victim_line_list,chooose-victim-block,id=%d,ipc=%d,vpc=%d\n", __func__, victim_line->id, victim_line->ipc, victim_line->vpc);
 

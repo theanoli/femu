@@ -1,3 +1,4 @@
+// FTL_SMARTERFIFO
 #ifndef __FTL_H
 #define __FTL_H
 

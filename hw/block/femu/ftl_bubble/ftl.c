@@ -1,3 +1,4 @@
+// FTL_BUBBLE
 #include "qemu/osdep.h"
 #include "hw/block/block.h"
 #include "hw/pci/msix.h"
@@ -57,6 +58,8 @@ static inline void set_rmap_ent(struct ssd *ssd, uint64_t lpn, struct ppa *ppa)
     ssd->rmap[pgidx] = lpn;
 }
 
+// I.e., if the current node's VPC is smaller than its parent's, bubble it up
+// (this is looking at the valid page count, so it's a min PQ for the vpc)
 static int victim_line_cmp_pri(pqueue_pri_t next, pqueue_pri_t curr)
 {
     return (next > curr);
@@ -94,10 +97,10 @@ static void ssd_init_lines(struct ssd *ssd)
     lm->lines = g_malloc0(sizeof(struct line) * lm->tt_lines);
 
     QTAILQ_INIT(&lm->free_line_list);
-    // lm->victim_line_pq = pqueue_init(spp->tt_lines, victim_line_cmp_pri,
-    //         victim_line_get_pri, victim_line_set_pri,
-    //         victim_line_get_pos, victim_line_set_pos);
-    QTAILQ_INIT(&lm->victim_line_list);
+    lm->victim_line_pq = pqueue_init(spp->tt_lines, victim_line_cmp_pri,
+            victim_line_get_pri, victim_line_set_pri,
+            victim_line_get_pos, victim_line_set_pos);
+    //QTAILQ_INIT(&lm->victim_line_list);
     QTAILQ_INIT(&lm->full_line_list);
 
     lm->free_line_cnt = 0;
@@ -186,8 +189,8 @@ static void ssd_advance_write_pointer(struct ssd *ssd)
                     /* there must be some invalid pages in this line */
                     //printf("Coperd,curline,vpc:%d,ipc:%d\n", wpp->curline->vpc, wpp->curline->ipc);
                     assert(wpp->curline->ipc > 0);
-                    // pqueue_insert_fifo(lm->victim_line_pq, wpp->curline);
-					QTAILQ_INSERT_TAIL(&lm->victim_line_list, wpp->curline, entry);
+                    pqueue_insert(lm->victim_line_pq, wpp->curline);
+                    //QTAILQ_INSERT_TAIL(&lm->victim_line_list, wpp->curline, entry);
                     lm->victim_line_cnt++;
                 }
                 /* current line is used up, pick another empty line */
@@ -240,11 +243,10 @@ static void check_params(struct ssdparams *spp)
 
 static void ssd_init_params(struct ssdparams *spp)
 {
-	// 32 GiB
     spp->secsz = 512;
     spp->secs_per_pg = 8;
-    spp->pgs_per_blk = 4 * 64;	// 16 * 64
-    spp->blks_per_pl = 166;  	// 16 * 166;
+    spp->pgs_per_blk = 4 * 64;
+    spp->blks_per_pl = 166; /* 16GB */
     spp->pls_per_lun = 1;
     spp->luns_per_ch = 8;
     spp->nchs = 8;
@@ -281,7 +283,7 @@ static void ssd_init_params(struct ssdparams *spp)
     spp->secs_per_line = spp->pgs_per_line * spp->secs_per_pg;
     spp->tt_lines = spp->blks_per_lun; /* TODO: to fix under multiplanes */
 
-    spp->gc_thres_pcent = 0.90;
+    spp->gc_thres_pcent = 0.75;
     spp->gc_thres_lines = (int)((1 - spp->gc_thres_pcent) * spp->tt_lines);
     spp->gc_thres_pcent_high = 0.95;
     spp->gc_thres_lines_high = (int)((1 - spp->gc_thres_pcent_high) * spp->tt_lines);
@@ -591,13 +593,18 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
     line->ipc++;
     assert(line->vpc > 0 && line->vpc <= spp->pgs_per_line);
     line->vpc--;
+
+	pqueue_t *q = lm->victim_line_pq;
     if (was_full_line) {
         /* move line: "full" -> "victim" */
         QTAILQ_REMOVE(&lm->full_line_list, line, entry);
         lm->full_line_cnt--;
-        // pqueue_insert_fifo(lm->victim_line_pq, line);
-        QTAILQ_INSERT_TAIL(&lm->victim_line_list, line, entry);
+        pqueue_insert(q, line);
+        //QTAILQ_INSERT_TAIL(&lm->victim_line_list, line, entry);
         lm->victim_line_cnt++;
+    } else if (q->getpos(line) > 0) {
+		// It should be in the pqueue already...
+		pqueue_bubble_up(q, q->getpos(line));
 	}
 }
 
@@ -709,11 +716,11 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
     //int max_ipc = 0;
     //int cnt = 0;
 
+#if 0
     if (QTAILQ_EMPTY(&lm->victim_line_list)) {
         return NULL;
     }
 
-	/*
     QTAILQ_FOREACH(line, &lm->victim_line_list, entry) {
         //printf("Coperd,%s,victim_line_list[%d],ipc=%d,vpc=%d\n", __func__, ++cnt, line->ipc, line->vpc);
         if (line->ipc > max_ipc) {
@@ -721,10 +728,9 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
             max_ipc = line->ipc;
         }
     }
-	*/
+#endif
 
-#if 0
-    victim_line = pqueue_peek_fifo(lm->victim_line_pq);
+    victim_line = pqueue_peek(lm->victim_line_pq);
     if (!victim_line) {
         return NULL;
     }
@@ -734,11 +740,8 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
         return NULL;
     }
 
-    pqueue_pop_fifo(lm->victim_line_pq);
-#endif
-	
-	victim_line = QTAILQ_FIRST(&lm->victim_line_list);
-    QTAILQ_REMOVE(&lm->victim_line_list, victim_line, entry);
+    pqueue_pop(lm->victim_line_pq);
+    //QTAILQ_REMOVE(&lm->victim_line_list, victim_line, entry);
     lm->victim_line_cnt--;
     //printf("Coperd,%s,victim_line_list,chooose-victim-block,id=%d,ipc=%d,vpc=%d\n", __func__, victim_line->id, victim_line->ipc, victim_line->vpc);
 
@@ -909,7 +912,7 @@ uint64_t ssd_read(struct ssd *ssd, NvmeRequest *req)
     bool in_gc = false; /* indicate whether any subIO met GC */
 
     if (end_lpn >= spp->tt_pgs) {
-        printf("RD-ERRRRRRRRRR,start_lpn=%"PRIu64",end_lpn=%"PRIu64",tt_pgs=%d,nsecs=%d\n", start_lpn, end_lpn, ssd->sp.tt_pgs, nsecs);
+        printf("RD-ERRRRRRRRRR,start_lpn=%"PRIu64",end_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, end_lpn, ssd->sp.tt_pgs);
     }
 
     //printf("Coperd,%s,end_lpn=%"PRIu64" (%d),len=%d\n", __func__, end_lpn, spp->tt_pgs, nsecs);
@@ -1002,7 +1005,8 @@ uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
         printf("ERRRRRRRRRR,start_lpn=%"PRIu64",end_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, end_lpn, ssd->sp.tt_pgs);
     }
     //assert(end_lpn < spp->tt_pgs);
-    //printf("Coperd,%s,end_lpn=%"PRIu64" (%d),len=%d\n", __func__, end_lpn, spp->tt_pgs, len);
+    // printf("Coperd,%s,lba=%"PRIu64",start_lpn=%"PRIu64",end_lpn=%"PRIu64" (%d),len=%d\n", 
+	//		__func__, lba, start_lpn, end_lpn, spp->tt_pgs, len);
 
     while (should_gc_high(ssd)) {
         /* perform GC here until !should_gc(ssd) */
@@ -1020,9 +1024,9 @@ uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
         if (mapped_ppa(&ppa)) {
             /* overwrite */
             /* update old page information first */
-            //printf("Coperd,before-overwrite,line[%d],ipc=%d,vpc=%d\n", ppa.g.blk, get_line(ssd, &ppa)->ipc, get_line(ssd, &ppa)->vpc);
+            // printf("Coperd,before-overwrite,line[%d],ipc=%d,vpc=%d\n", ppa.g.blk, get_line(ssd, &ppa)->ipc, get_line(ssd, &ppa)->vpc);
             mark_page_invalid(ssd, &ppa);
-            //printf("Coperd,after-overwrite,line[%d],ipc=%d,vpc=%d\n", ppa.g.blk, get_line(ssd, &ppa)->ipc, get_line(ssd, &ppa)->vpc);
+            // printf("Coperd,after-overwrite,line[%d],ipc=%d,vpc=%d\n", ppa.g.blk, get_line(ssd, &ppa)->ipc, get_line(ssd, &ppa)->vpc);
             set_rmap_ent(ssd, INVALID_LPN, &ppa);
         }
 
