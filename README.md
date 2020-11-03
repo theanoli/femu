@@ -71,12 +71,14 @@ Installation
 ```
 
   For Debian/Ubuntu-based distributions: 
-```sudo ./pkgdep.sh
+```
+sudo ./pkgdep.sh
 ```
 
   For Nix, a shell.nix file with the required packages is included. 
   Start a Nix shell for the compilation/installation:
-```nix-shell
+```
+nix-shell
 ```
 
 2. Compile & Install FEMU:
