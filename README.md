@@ -68,8 +68,15 @@ Installation
   # Copy femu script
   cp ../femu-scripts/femu-copy-scripts.sh .
   ./femu-copy-scripts.sh .
-  # only Debian/Ubuntu based distributions supported
-  sudo ./pkgdep.sh
+```
+
+  For Debian/Ubuntu-based distributions: 
+```sudo ./pkgdep.sh
+```
+
+  For Nix, a shell.nix file with the required packages is included. 
+  Start a Nix shell for the compilation/installation:
+```nix-shell
 ```
 
 2. Compile & Install FEMU:

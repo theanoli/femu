@@ -1,10 +1,11 @@
-#!/bin/bash
+#!/bin/sh
 # Huaicheng <huaicheng@cs.uchicago.edu>
 # Copy necessary scripts for running FEMU
+# Modified by Theano <theano@princeton.edu>
 
 FSD="../femu-scripts"
 
-CPL=(pkgdep.sh femu-compile.sh run-whitebox.sh run-blackbox.sh run-nossd.sh pin.sh ftk vssd1.conf)
+CPL=(shell.nix pkgdep.sh femu-compile.sh run-whitebox.sh run-blackbox.sh run-nossd.sh pin.sh ftk vssd1.conf)
 
 echo ""
 echo "==> Copying following FEMU script to current directory:"
